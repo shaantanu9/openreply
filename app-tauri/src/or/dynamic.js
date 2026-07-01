@@ -299,7 +299,7 @@ export async function renderOverview(view) {
        <div id="ov-personas" class="${card}">${skelCardBody(3)}</div>
      </div>`;
 
-  document.getElementById("ov-refresh").onclick = async (e) => {
+  view.querySelector("#ov-refresh").onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
     b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
     try { await api.agentRefresh(null, false); toast("Knowledge refreshed + learned"); renderOverview(view); }
@@ -307,14 +307,14 @@ export async function renderOverview(view) {
   };
 
   // Evolve the Goal Playbook from here (mirrors the Learning screen's button).
-  document.getElementById("ov-evolve").onclick = async (e) => {
+  view.querySelector("#ov-evolve").onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
     b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
     try { const r = await api.agentEvolve(); toast(r?.skipped ? (r.reason || "Skipped") : (r?.summary || "Evolved ✓")); }
     catch (err) { toast("Evolve failed: " + err); }
     b.disabled = false; b.innerHTML = html; icons(); loadStrategyStrip();
   };
-  document.getElementById("ov-suggest").onclick = async (e) => {
+  view.querySelector("#ov-suggest").onclick = async (e) => {
     const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
     b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
     try { const r = await api.agentIdeas(true); toast(r?.skipped ? (r.reason || "Skipped") : `Suggested ${(r?.ideas || []).length} idea(s) — see Learning`); }
@@ -324,7 +324,7 @@ export async function renderOverview(view) {
 
   // Compact strategy strip: current playbook top angle + freshness, links to Learning.
   async function loadStrategyStrip() {
-    const host = document.getElementById("ov-strategy");
+    const host = view.querySelector("#ov-strategy");
     if (!host) return;
     let cur = null;
     try { cur = await api.agentPlaybook(); } catch (e) {}
@@ -406,7 +406,7 @@ export async function renderOverview(view) {
   }
 
   function digestPaint() {
-    const host = document.getElementById("ov-digest");
+    const host = view.querySelector("#ov-digest");
     if (!host) return;
     const d = D.data;
     const briefing = d && d.briefing;
@@ -478,7 +478,7 @@ export async function renderOverview(view) {
       if (u) api.openUrl(u).catch(() => toast("Couldn't open link"));
     });
     host.querySelectorAll("[data-cat]").forEach((el) => el.onclick = () => { D.cat = el.getAttribute("data-cat"); digestPaint(); });
-    const clr = document.getElementById("ov-digest-clear"); if (clr) clr.onclick = () => { digestSearch = null; digestPaint(); };
+    const clr = view.querySelector("#ov-digest-clear"); if (clr) clr.onclick = () => { digestSearch = null; digestPaint(); };
     host.querySelectorAll("[data-ov-theme]").forEach((el) => el.onclick = () => {
       const s = sections[+el.getAttribute("data-ov-theme")] || {};
       digestTask({ title: s.headline, context: s.why });
@@ -491,7 +491,7 @@ export async function renderOverview(view) {
   }
 
   function wireDigest() {
-    const s = document.getElementById("ov-digest-search");
+    const s = view.querySelector("#ov-digest-search");
     if (s) s.onkeydown = async (e) => {
       if (e.key !== "Enter") return;
       const q = (e.target.value || "").trim(); if (!q) return;
@@ -499,7 +499,7 @@ export async function renderOverview(view) {
       try { const r = await api.agentDigestSearch(q); digestSearch = { query: q, results: (r && r.results) || [] }; digestPaint(); }
       catch (err) { toast("Search failed: " + err); }
     };
-    const b = document.getElementById("ov-digest-refresh");
+    const b = view.querySelector("#ov-digest-refresh");
     if (b) b.onclick = () => { if (D.updating) return; digestSearch = null; refreshDigest({ force: true }); };
   }
   // today-only cache: what we can trust as "already today's" (skip the rebuild).
@@ -566,9 +566,9 @@ export async function renderOverview(view) {
       const r = await api.replyList("new", 0, 3, { sort: "score" });
       const opps = r?.opportunities || [];
       const cnt = (r && r.total != null) ? r.total : opps.length;
-      const box = document.getElementById("ov-kpi-opps");
+      const box = view.querySelector("#ov-kpi-opps");
       if (box) box.innerHTML = kpi("New opportunities", cnt, "#/opportunities", "target");
-      const ol = document.getElementById("ov-opps");
+      const ol = view.querySelector("#ov-opps");
       if (ol) ol.innerHTML = opps.length
         ? opps.map((o) => `<a href="#/opportunities" class="block rounded-lg border border-zinc-100 dark:border-zinc-800 px-3 py-2 hover:border-reddit/40">
             <div class="flex items-center gap-2"><span class="rounded ${platformBadge(o.platform)} px-1.5 py-0.5 text-[11px] font-bold">${esc(o.platform || "")}</span><span class="text-xs font-extrabold ${scoreCls(o.score || 0)}">${Math.round((o.score || 0) * 100)}</span></div>
@@ -581,9 +581,9 @@ export async function renderOverview(view) {
     try {
       const r = await api.contentList(null, null, 3);
       const drafts = r?.content || [];
-      const box = document.getElementById("ov-kpi-drafts");
+      const box = view.querySelector("#ov-kpi-drafts");
       if (box) box.innerHTML = kpi("Drafts", drafts.length, "#/inbox", "file-pen");
-      const dl = document.getElementById("ov-drafts");
+      const dl = view.querySelector("#ov-drafts");
       if (dl) dl.innerHTML = drafts.length
         ? drafts.map((d) => `<a href="#/compose" class="block rounded-lg border border-zinc-100 dark:border-zinc-800 px-3 py-2 hover:border-reddit/40">
             <div class="text-[11px] font-bold uppercase text-zinc-400">${esc(d.kind || "draft")}</div>
@@ -596,7 +596,7 @@ export async function renderOverview(view) {
   // Knowledge personas — link single-lens learning personas so their beliefs +
   // memories + graph get blended into this agent's replies/content.
   async function loadPersonas() {
-    const box = document.getElementById("ov-personas");
+    const box = view.querySelector("#ov-personas");
     if (!box) return;
     let all = [], linked = [];
     try { all = (await api.personaList())?.personas || []; } catch (e) {}
@@ -625,10 +625,10 @@ export async function renderOverview(view) {
       try { await api.agentUnlinkPersona(parseInt(b.getAttribute("data-unlink")), a.id); toast("Persona unlinked"); loadPersonas(); }
       catch (e) { toast("Unlink failed"); }
     });
-    const lb = document.getElementById("ov-plink-btn");
+    const lb = view.querySelector("#ov-plink-btn");
     if (lb) lb.onclick = async () => {
-      const pid = parseInt(document.getElementById("ov-plink").value);
-      const w = parseFloat(document.getElementById("ov-pweight").value) || 1.0;
+      const pid = parseInt(view.querySelector("#ov-plink").value);
+      const w = parseFloat(view.querySelector("#ov-pweight").value) || 1.0;
       lb.disabled = true;
       try { await api.agentLinkPersona(pid, a.id, w); toast("Persona linked"); loadPersonas(); }
       catch (e) { toast("Link failed"); lb.disabled = false; }
@@ -5345,7 +5345,7 @@ export async function renderTasks(view) {
     const openBtn = t.target
       ? `<button data-act="open" data-id="${esc(t.id)}" class="${bd} text-reddit">Open in ${esc(t.target)} →</button>`
       : "";
-    return `<div class="${card} !p-4" data-row="${esc(t.id)}">
+    return `<div class="${card} !p-4 cursor-grab active:cursor-grabbing" draggable="true" data-task-id="${esc(t.id)}" data-row="${esc(t.id)}">
       <div class="flex items-center gap-2">
         <span class="rounded px-2 py-0.5 text-xs font-bold ${kcls}">${esc(klabel)}</span>
         ${t.source && t.source !== "manual" ? `<span class="text-[11px] text-zinc-400">from ${esc(t.source)}</span>` : ""}
@@ -5365,13 +5365,51 @@ export async function renderTasks(view) {
       const cards = list.length
         ? list.map(taskCard).join("")
         : `<div class="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 p-4 text-center text-xs text-zinc-400">Nothing here</div>`;
-      return `<div>
+      return `<div data-status="${esc(st)}">
         <div class="mb-2 flex items-center gap-2 text-sm font-bold text-zinc-700 dark:text-zinc-200">${label}
           <span class="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 text-xs text-zinc-500">${list.length}</span></div>
-        <div class="space-y-3">${cards}</div></div>`;
+        <div class="tk-dropzone min-h-[120px] space-y-3 rounded-lg p-1 transition-colors">${cards}</div></div>`;
     }).join("");
     board().innerHTML = cols;
     board().querySelectorAll("[data-act]").forEach(b => b.onclick = () => tkAction(b));
+
+    // Drag-and-drop tasks between columns.
+    board().querySelectorAll("[data-task-id]").forEach((card) => {
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", card.dataset.taskId);
+        e.dataTransfer.effectAllowed = "move";
+        card.classList.add("opacity-50");
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("opacity-50");
+        board().querySelectorAll(".tk-dropzone").forEach((dz) => dz.classList.remove("bg-reddit/10", "ring-2", "ring-reddit/30"));
+      });
+    });
+    board().querySelectorAll(".tk-dropzone").forEach((dz) => {
+      dz.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        dz.classList.add("bg-reddit/10", "ring-2", "ring-reddit/30");
+      });
+      dz.addEventListener("dragleave", () => {
+        dz.classList.remove("bg-reddit/10", "ring-2", "ring-reddit/30");
+      });
+      dz.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        dz.classList.remove("bg-reddit/10", "ring-2", "ring-reddit/30");
+        const id = e.dataTransfer.getData("text/plain");
+        const status = dz.closest("[data-status]")?.dataset.status;
+        if (!id || !status) return;
+        const t = tasks.find((x) => String(x.id) === id);
+        if (!t || t.status === status) return;
+        // Optimistically move locally, then persist.
+        t.status = status;
+        paint();
+        try { await api.taskUpdate(id, { status }); }
+        catch (err) { toast("Move failed: " + err); load(); }
+      });
+    });
+
     icons();
   }
 
