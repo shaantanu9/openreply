@@ -560,8 +560,15 @@ def build_digest(agent_id: str | None = None, *, rebuild: bool = False,
         "created_at": now,
     }
     db["reply_digest"].upsert(rec, pk="id")
+    try:
+        from ..research.competitor_intel.digest_hook import competitor_moves
+        _prod = a.get("product_id") or None
+        moves = competitor_moves(_prod) if _prod else []
+    except Exception:
+        moves = []
     return {"ok": True, "cached": False, "day": day, "briefing": briefing,
             "feed": feed, "sources": json.loads(rec["sources_json"]),
+            "competitor_moves": moves,
             "generated_at": now}
 
 
