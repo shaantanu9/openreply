@@ -3,6 +3,7 @@
 import { api, esc } from "./api.js";
 import { renderMarkdown, mdWrap, inlineMdMultiline } from "./markdown.js";
 import { skeletonBody, skelCardsN, skelRows, skelCardBody, skelKpiRow } from "./skeleton.js";
+import { store as fetchStore } from "./fetchStatus.js";
 
 const icons = () => window.lucide && window.lucide.createIcons();
 const toast = (m) => window.orToast && window.orToast(m);
@@ -258,6 +259,7 @@ export async function renderOverview(view) {
        <button id="ov-suggest" class="${btnIcon}" title="Suggest ideas — generate content & reply ideas from your knowledge" aria-label="Suggest ideas"><i data-lucide="lightbulb" class="h-4 w-4"></i></button>
        <a href="#/opportunities" class="${btnP}"><i data-lucide="target" class="inline-block h-4 w-4 align-[-2px]"></i> Find opportunities</a>`) +
     freshBanner +
+    `<div id="ov-fetch-panel" class="mb-5"></div>` +
     `<div id="ov-strategy" class="mb-5"></div>` +
     `<div id="ov-digest" class="mb-5"></div>` +
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -299,34 +301,44 @@ export async function renderOverview(view) {
        <div id="ov-personas" class="${card}">${skelCardBody(3)}</div>
      </div>`;
 
-  view.querySelector("#ov-refresh").onclick = async (e) => {
-    const b = e.currentTarget; b.disabled = true; const html = b.innerHTML;
-    b.innerHTML = `<i data-lucide="loader" class="h-4 w-4 animate-spin"></i>`; icons();
-    // Refresh = a multi-source collect (each source 30-240s) + a learning pass,
-    // i.e. MINUTES of work. The blocking `agent_refresh` was capped at the 120s
-    // IPC timeout, so it always timed out mid-fetch → dead spinner, "nothing
-    // new". Drive it via the streaming command instead (unbounded, live
-    // progress). Fall back to the blocking call in a plain browser / old shell.
-    if (!api.agentRefreshStream || !api.onEvent) {
+  // Refresh = a multi-source collect (each source 30-240s) + a learning pass,
+  // i.e. MINUTES of work. The blocking `agent_refresh` was capped at the 120s
+  // IPC timeout, so it always timed out mid-fetch → dead spinner, "nothing
+  // new". Drive it via the streaming command instead (unbounded, live
+  // progress) — the app-level listener (main.js) owns the progress events and
+  // feeds the shared fetchStore; this screen only starts it and renders it.
+  const fpHost = view.querySelector("#ov-fetch-panel");
+  const unsubFetch = fetchStore.subscribe((s) => {
+    const btn = view.querySelector("#ov-refresh");
+    if (btn) btn.disabled = !!s.running;
+    if (!fpHost) return;
+    if (!s.running && !s.done) { fpHost.innerHTML = ""; return; }
+    const rows = Object.entries(s.sources).map(([n, v]) =>
+      `<div class="flex items-center gap-2 text-sm">${v.status === "done"
+        ? `<span class="text-emerald-500">✓</span><span class="text-zinc-600 dark:text-zinc-300">${esc(n)}</span><span class="ml-auto text-xs text-zinc-400">${v.count} posts</span>`
+        : v.status === "error"
+        ? `<span class="text-rose-500">✗</span><span class="text-zinc-500">${esc(n)}</span><span class="ml-auto text-xs text-zinc-300">skipped</span>`
+        : `<i data-lucide="loader" class="h-3.5 w-3.5 animate-spin text-zinc-400"></i><span class="text-zinc-500">${esc(n)}</span>`}</div>`).join("");
+    fpHost.innerHTML = s.running
+      ? `<div class="${card}"><div class="mb-2 flex items-center justify-between"><b class="text-zinc-900 dark:text-white">Fetching latest — ${s.phase || "collecting"}…</b><span class="text-xs text-zinc-400">${s.totalPosts} posts</span></div>${rows}</div>`
+      : "";
+    if (window.refreshIcons) window.refreshIcons();
+  });
+  view.addEventListener("or:teardown", () => { try { unsubFetch(); } catch (e) {} }, { once: true });
+
+  const onFetchDone = () => renderOverview(view);
+  window.addEventListener("openreply:fetch-done", onFetchDone, { once: true });
+
+  view.querySelector("#ov-refresh").onclick = async () => {
+    if (fetchStore.getState().running) { toast("A fetch is already running"); return; }
+    if (!api.agentRefreshStream) {   // non-Tauri / old shell fallback
       try { await api.agentRefresh(null, false); toast("Knowledge refreshed + learned"); renderOverview(view); }
-      catch (err) { toast("Refresh failed"); b.disabled = false; b.innerHTML = html; icons(); }
+      catch (e) { toast("Refresh failed"); }
       return;
     }
-    let unP = null, unD = null;
-    const cleanup = () => { try { unP && unP(); } catch (e) {} try { unD && unD(); } catch (e) {} unP = unD = null; };
-    try {
-      unP = await api.onEvent("agent_refresh:progress", (payload) => {
-        let ev; try { ev = typeof payload === "string" ? JSON.parse(payload) : payload; } catch (e) { return; }
-        const msg = ev && (ev.msg || ev.event); if (msg) b.title = "Refreshing… " + String(msg).slice(0, 90);
-      });
-      unD = await api.onEvent("agent_refresh:done", (payload) => {
-        let d = {}; try { d = typeof payload === "string" ? JSON.parse(payload) : (payload || {}); } catch (e) {}
-        cleanup(); b.title = "Refresh + learn";
-        if (d.code && d.code !== 0) { toast(d.hint || `Refresh failed (${d.code})`); b.disabled = false; b.innerHTML = html; icons(); }
-        else { toast("Knowledge refreshed + learned"); renderOverview(view); }
-      });
-      await api.agentRefreshStream(null, false);
-    } catch (err) { cleanup(); toast("Refresh failed: " + err); b.disabled = false; b.innerHTML = html; icons(); }
+    fetchStore.start(null);
+    try { await api.agentRefreshStream(null, false); }
+    catch (err) { fetchStore.finish({ code: 1, hint: String(err) }); toast("Refresh failed: " + err); }
   };
 
   // Evolve the Goal Playbook from here (mirrors the Learning screen's button).
@@ -956,6 +968,7 @@ export async function renderOpportunities(view) {
   }
 
   document.getElementById("op-find").onclick = async () => {
+    if (fetchStore.getState().running) { statusEl.textContent = "A fetch is in progress — try again in a moment."; return; }
     const pf = document.getElementById("op-pf").value.trim();
     const lim = parseInt(document.getElementById("op-lim").value, 10) || 15;
     const btnEl = document.getElementById("op-find");
