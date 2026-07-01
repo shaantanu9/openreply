@@ -36,13 +36,14 @@ def _row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
             return json.loads(v)
         except Exception:
             return default
+    urls_val = _j(row.get("urls_json"), {})
     return {
         "product_id": row.get("product_id"),
         "competitor_name": row.get("competitor_name"),
         "slug": row.get("slug"),
         "topic": row.get("topic"),
-        "website": (_j(row.get("urls_json"), {}) or {}).get("website", ""),
-        "urls": _j(row.get("urls_json"), {}),
+        "website": (urls_val or {}).get("website", ""),
+        "urls": urls_val,
         "aliases": _j(row.get("aliases_json"), []),
         "subreddits": _j(row.get("subreddits_json"), []),
         "source_config": _j(row.get("source_config_json"), {}),
@@ -77,6 +78,11 @@ def add_competitor(
     if website:
         url_map.setdefault("website", website)
     cfg = source_config or {"enabled_adapters": list(DEFAULT_SOURCE_PACK), "params": {}}
+
+    # Preserve tracked_since on re-add (upsert)
+    existing = get_competitor(product_id, name)
+    tracked_since = existing["tracked_since"] if existing else _now()
+
     rec = {
         "product_id": product_id,
         "competitor_name": name,
@@ -92,7 +98,7 @@ def add_competitor(
         "in_opp_scan": 1 if in_opp_scan else 0,
         "notes": notes,
         "is_active": 1,
-        "tracked_since": _now(),
+        "tracked_since": tracked_since,
         "updated_at": _now(),
     }
     db["product_competitors"].upsert(rec, pk=("product_id", "competitor_name"))

@@ -25,3 +25,8 @@ def test_list_competitors():
     R.add_competitor("prodL", "B")
     rows = R.list_competitors("prodL")
     assert {r["competitor_name"] for r in rows} == {"A", "B"}
+
+def test_list_competitors_active_only():
+    R.add_competitor("prodF", "X")
+    rows = R.list_competitors(active_only=True)
+    assert any(r["competitor_name"] == "X" for r in rows)
