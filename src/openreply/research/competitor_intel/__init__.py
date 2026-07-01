@@ -1,4 +1,5 @@
 """Competitor Intelligence package."""
+from .enrich import enrich_seed  # noqa: F401
 from .registry import (  # noqa: F401
     DEFAULT_SOURCE_PACK,
     add_competitor,
