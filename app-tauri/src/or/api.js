@@ -420,6 +420,18 @@ export const api = {
   palaceModelStatus: () => call("palace_model_status"),
   palaceStats: () => call("palace_stats"),
   palaceReindex: () => call("palace_reindex"),
+  // ── Competitor Intelligence (OpenReply) ──
+  competitorList: (productId) => call("competitor_list", { productId }),
+  competitorAdd: (productId, name, website, dailyFetch) =>
+    call("competitor_add", { productId, name, website: website || "", dailyFetch: !!dailyFetch }),
+  competitorGet: (productId, name) => call("competitor_get", { productId, name }),
+  competitorRun: (productId, name) => call("competitor_run", { productId, name }),
+  competitorFindings: (productId, name) => call("competitor_findings", { productId, name: name || null }),
+  competitorOpportunities: (productId, name) => call("competitor_opportunities", { productId, name: name || null }),
+  competitorCompare: (productId) => call("competitor_compare", { productId }),
+  competitorEnrich: (name, website) => call("competitor_enrich", { name, website: website || "" }),
+  competitorSetAction: (signalId, action) => call("competitor_set_action", { signalId, action }),
+  competitorRemove: (productId, name) => call("competitor_remove", { productId, name }),
 };
 
 export function esc(s) {
