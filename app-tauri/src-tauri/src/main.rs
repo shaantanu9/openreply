@@ -547,6 +547,17 @@ fn main() {
             commands::x_account_fetch_thread,
             commands::x_account_save_to_library,
             commands::x_account_remove,
+            // ── Competitor Intelligence (Task 10) ──
+            commands::competitor_list,
+            commands::competitor_add,
+            commands::competitor_get,
+            commands::competitor_run,
+            commands::competitor_findings,
+            commands::competitor_opportunities,
+            commands::competitor_compare,
+            commands::competitor_enrich,
+            commands::competitor_set_action,
+            commands::competitor_remove,
         ])
         .build(tauri::generate_context!())
         .expect("error while building openreply");

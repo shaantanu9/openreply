@@ -4087,3 +4087,88 @@ pub async fn x_account_save_to_library(
 pub async fn x_account_remove(app: AppHandle, handle: String) -> Result<Value, String> {
     run_cli(&app, vec!["x-account", "remove", &handle, "--json"]).await.map_err(err_to_string)
 }
+
+// ─── Competitor Intelligence ──────────────────────────────────────────────
+// Commands for tracking and analyzing competitor data.
+
+/// `openreply competitor list --product-id <id> --json`
+#[tauri::command]
+pub async fn competitor_list(app: AppHandle, product_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["competitor", "list", "--product-id", &product_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+/// `openreply competitor add --product-id <id> --name <name> [--website <w>] [--daily-fetch]`
+#[tauri::command]
+pub async fn competitor_add(app: AppHandle, product_id: String, name: String,
+                            website: Option<String>, daily_fetch: Option<bool>) -> Result<Value, String> {
+    let mut args = vec!["competitor".into(), "add".into(),
+                        "--product-id".into(), product_id, "--name".into(), name,
+                        "--json".into()];
+    if let Some(w) = website { if !w.is_empty() { args.push("--website".into()); args.push(w); } }
+    if daily_fetch.unwrap_or(false) { args.push("--daily-fetch".into()); }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `openreply competitor show --product-id <id> --name <name> --json`
+#[tauri::command]
+pub async fn competitor_get(app: AppHandle, product_id: String, name: String) -> Result<Value, String> {
+    run_cli(&app, vec!["competitor", "show", "--product-id", &product_id, "--name", &name, "--json"])
+        .await.map_err(err_to_string)
+}
+
+/// `openreply competitor run --product-id <id> --name <name> --json`
+#[tauri::command]
+pub async fn competitor_run(app: AppHandle, product_id: String, name: String) -> Result<Value, String> {
+    run_cli(&app, vec!["competitor", "run", "--product-id", &product_id, "--name", &name, "--json"])
+        .await.map_err(err_to_string)
+}
+
+/// `openreply competitor findings --product-id <id> [--name <name>] --json`
+#[tauri::command]
+pub async fn competitor_findings(app: AppHandle, product_id: String, name: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["competitor".into(), "findings".into(), "--product-id".into(), product_id, "--json".into()];
+    if let Some(n) = name { if !n.is_empty() { args.push("--name".into()); args.push(n); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `openreply competitor opportunities --product-id <id> [--name <name>] --json`
+#[tauri::command]
+pub async fn competitor_opportunities(app: AppHandle, product_id: String, name: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["competitor".into(), "opportunities".into(), "--product-id".into(), product_id, "--json".into()];
+    if let Some(n) = name { if !n.is_empty() { args.push("--name".into()); args.push(n); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `openreply competitor compare --product-id <id> --json`
+#[tauri::command]
+pub async fn competitor_compare(app: AppHandle, product_id: String) -> Result<Value, String> {
+    run_cli(&app, vec!["competitor", "compare", "--product-id", &product_id, "--json"])
+        .await.map_err(err_to_string)
+}
+
+/// `openreply competitor enrich --name <name> [--website <w>] --json`
+#[tauri::command]
+pub async fn competitor_enrich(app: AppHandle, name: String, website: Option<String>) -> Result<Value, String> {
+    let mut args = vec!["competitor".into(), "enrich".into(), "--name".into(), name, "--json".into()];
+    if let Some(w) = website { if !w.is_empty() { args.push("--website".into()); args.push(w); } }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_cli(&app, refs).await.map_err(err_to_string)
+}
+
+/// `openreply competitor set-action --signal-id <id> --action <action> --json`
+#[tauri::command]
+pub async fn competitor_set_action(app: AppHandle, signal_id: String, action: String) -> Result<Value, String> {
+    run_cli(&app, vec!["competitor", "set-action", "--signal-id", &signal_id, "--action", &action, "--json"])
+        .await.map_err(err_to_string)
+}
+
+/// `openreply competitor remove --product-id <id> --name <name> --json`
+#[tauri::command]
+pub async fn competitor_remove(app: AppHandle, product_id: String, name: String) -> Result<Value, String> {
+    run_cli(&app, vec!["competitor", "remove", "--product-id", &product_id, "--name", &name, "--json"])
+        .await.map_err(err_to_string)
+}
