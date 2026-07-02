@@ -15,7 +15,7 @@ learns from the whole landscape, not just where it can reply.
 """
 from __future__ import annotations
 
-from .agent import get_agent
+from .agent import agent_corpus_topic, get_agent
 from .schema import init_reply_schema
 
 # Free, no-auth discovery sources every agent should pull into its corpus so the
@@ -65,7 +65,7 @@ def list_corpus(
     a = get_agent(agent_id)
     if not a:
         return {"error": "no such agent"}
-    topic = a.get("topic") or a.get("name")
+    topic = agent_corpus_topic(a)
     db = init_reply_schema()
     # Ensure the relevance table exists so the LEFT JOIN below never errors.
     try:

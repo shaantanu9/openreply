@@ -13,7 +13,7 @@ import json
 import time
 
 from ..analyze.providers.base import get_provider
-from .agent import get_agent
+from .agent import agent_corpus_topic, get_agent
 from .schema import init_reply_schema
 
 _BATCH = 10
@@ -71,7 +71,7 @@ def check_relevance(agent_id: str | None = None, *, limit: int = 60, provider: s
     a = get_agent(agent_id)
     if not a:
         return {"error": "no active agent"}
-    topic = a.get("topic") or a.get("name")
+    topic = agent_corpus_topic(a)
     niche = a.get("niche") or a.get("brand") or a.get("name") or topic
     db = _ensure(init_reply_schema())
 

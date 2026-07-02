@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 
-from .agent import active_id, get_agent
+from .agent import active_id, agent_corpus_topic, get_agent
 from .schema import init_reply_schema
 
 # platform -> how to turn a handle into a fetch query + the source_type tag.
@@ -112,7 +112,9 @@ def fetch_account(handle: str, *, platform: str = "x", limit: int = 25,
     a = get_agent(agent_id)
     if not a:
         return {"error": "no active agent"}
-    topic = a.get("topic") or a.get("name")
+    # Canonical corpus key so watched-account posts tag into the SAME partition
+    # collect() writes to (typed→canonical drift would otherwise split them).
+    topic = agent_corpus_topic(a)
 
     rows: list[dict] = []
     try:

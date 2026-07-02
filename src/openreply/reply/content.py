@@ -11,7 +11,7 @@ import hashlib
 import time
 
 from ..analyze.providers.base import get_provider
-from .agent import get_active_agent, get_agent
+from .agent import agent_corpus_topic, get_active_agent, get_agent
 from .knowledge import build_knowledge_context
 from .schema import init_reply_schema
 
@@ -156,7 +156,7 @@ def generate_content(
     # with the topic corpus. Seed retrieval from the angle, else the thread
     # context (for follow-ups), else the agent's tracked keywords.
     query = angle or context_text or " ".join(a.get("keywords") or [])
-    knowledge = build_knowledge_context(a["id"], query, corpus_topic=a["topic"], corpus_limit=4)
+    knowledge = build_knowledge_context(a["id"], query, corpus_topic=agent_corpus_topic(a), corpus_limit=4)
 
     # Follow-up kinds need conversation / prior-draft context to build on.
     parent_id = ""

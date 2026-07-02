@@ -111,6 +111,34 @@ def _hydrate(row: dict) -> dict:
     return row
 
 
+def agent_corpus_topic(a: dict) -> str:
+    """Canonical READ key for an agent's corpus / graph / findings.
+
+    An agent stores the *user-typed* ``topic`` for display, but ``collect()``
+    writes ``posts`` / ``topic_posts`` / ``graph_nodes`` / ``findings`` under
+    the LLM-*canonical* form of that topic (see ``research.collect`` topic
+    canonicalization + ``topic_aliases``). When the typed topic was rewritten
+    at collect time — e.g. "AI-powered software development and engineering
+    services" → "AI-powered software development services" — every read keyed
+    on the raw typed topic finds zero rows, so the agent looks empty: chat
+    replies "no knowledge yet", the Agents card shows posts=0, Library is
+    blank, and ``learn`` distills from an empty corpus (leaving the persona
+    with no memories).
+
+    Resolve the typed topic to its canonical read key so lookups land on the
+    data. ``canonical_for_read`` returns the input unchanged when no alias /
+    canonicalization binding exists, so un-canonicalized agents are affected
+    byte-for-byte not at all. Never writes, never registers."""
+    raw = (a.get("topic") or a.get("name") or "").strip()
+    if not raw:
+        return raw
+    try:
+        from ..research.topic_resolver import canonical_for_read
+        return canonical_for_read(raw)
+    except Exception:
+        return raw
+
+
 def _row(db, aid: str):
     try:
         return db["agents"].get(aid)
@@ -229,8 +257,9 @@ def list_agents() -> list[dict]:
         a["active"] = a["id"] == act
         # Per-agent stats for the Agents card (posts collected / brain nodes /
         # open opportunities). Topic-scoped like knowledge_summary; opps are
-        # brand-scoped (brand_id == agent id).
-        topic = a.get("topic")
+        # brand-scoped (brand_id == agent id). Resolve to the canonical corpus
+        # key so a canonicalized/drifted topic still counts its own posts.
+        topic = agent_corpus_topic(a)
         a["posts"] = _count("SELECT COUNT(*) FROM topic_posts WHERE topic=?", [topic])
         a["graph_nodes"] = _count("SELECT COUNT(*) FROM graph_nodes WHERE topic=?", [topic])
         a["opps"] = _count(
@@ -319,7 +348,7 @@ def knowledge_summary(aid: str | None = None) -> dict:
     if not a:
         return {"error": "no agent"}
     db = init_reply_schema()
-    topic = a["topic"]
+    topic = agent_corpus_topic(a)
 
     def _count(sql, args):
         try:
