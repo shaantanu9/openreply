@@ -77,11 +77,15 @@ export async function renderAgents(view) {
   async function createAgent() {
     const name = document.getElementById("ag-name").value.trim();
     const msg = document.getElementById("ag-msg");
-    if (!name) { msg.textContent = "Name required."; return; }
+    if (!name) { msg.textContent = "Name required."; msg.className = "text-sm text-rose-500"; return; }
     const pfs = [...document.querySelectorAll("#ag-form input[type=checkbox]:checked")].map(c => c.value);
-    msg.textContent = "Creating…";
+    const btn = document.getElementById("ag-create");
+    if (btn) btn.disabled = true;
+    const STEPS = ["Saving agent", "Registering knowledge scope", "Ready"];
+    stepLine(msg, STEPS, 0);
+    const toScope = setTimeout(() => stepLine(msg, STEPS, 1), 900);
     try {
-      await api.agentCreate({
+      await withTimeout(api.agentCreate({
         name,
         niche: document.getElementById("ag-niche").value.trim(),
         website: document.getElementById("ag-website").value.trim(),
@@ -89,11 +93,17 @@ export async function renderAgents(view) {
         keywords: document.getElementById("ag-keywords").value.trim(),
         product: document.getElementById("ag-product").value.trim(),
         platforms: pfs.join(","),
-      });
-      toast("Agent created");
+      }), 60000, "create timed out");
+      clearTimeout(toScope);
+      stepLine(msg, STEPS, 2);
+      toast("Agent created — run a fetch on its page to pull the first data.");
       document.getElementById("ag-form").classList.add("hidden");
       load();
-    } catch (e) { msg.textContent = "Failed: " + e; }
+    } catch (e) {
+      clearTimeout(toScope);
+      stepLine(msg, STEPS, 0, { error: true });
+      msg.innerHTML += ` <span class="text-rose-500">— ${esc(String(e.message || e))}</span>`;
+    } finally { if (btn) btn.disabled = false; }
   }
 
   function paintAgents(agents) {
@@ -169,24 +179,54 @@ function urlFetchRow(inputId, buttonId, msgId, onFill) {
   <p id="${msgId}" class="text-sm text-zinc-500"></p>`;
 }
 
+// Race a promise against a timeout so a hung sidecar/network call can never
+// leave the UI spinning forever. Rejects with `label` on timeout.
+function withTimeout(promise, ms, label) {
+  let t;
+  const timer = new Promise((_, rej) => { t = setTimeout(() => rej(new Error(label || "timed out")), ms); });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(t));
+}
+
+// Render a small stepped-progress line ("① Fetching page  ② AI review  ③ Done")
+// into `msg` so slow operations read as progress, not a frozen screen.
+function stepLine(msg, steps, activeIdx, { error = false } = {}) {
+  if (!msg) return;
+  msg.className = "text-sm " + (error ? "text-rose-500" : "text-zinc-500");
+  msg.innerHTML = steps.map((s, i) => {
+    const done = i < activeIdx, active = i === activeIdx;
+    const mark = error && active ? "✗" : done ? "✓" : active
+      ? '<span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent align-[-2px]"></span>'
+      : "○";
+    const cls = done ? "text-emerald-600" : active ? (error ? "text-rose-500" : "text-zinc-700 dark:text-zinc-200 font-semibold") : "text-zinc-400";
+    return `<span class="${cls}">${mark} ${s}</span>`;
+  }).join('<span class="mx-1.5 text-zinc-300">→</span>');
+}
+
 async function runUrlFetch(inputId, msgId, onFill) {
   const url = document.getElementById(inputId).value.trim();
   const msg = document.getElementById(msgId);
   if (!url) { msg.textContent = "Enter a URL first."; msg.className = "text-sm text-rose-500"; return; }
-  msg.className = "text-sm text-zinc-500"; msg.textContent = "Fetching & analysing…";
+  const STEPS = ["Fetching page", "AI reviewing", "Filling form"];
+  stepLine(msg, STEPS, 0);
+  // The backend parse is one call (fetch + LLM); advance the visible step
+  // partway so the "AI review" phase is shown while it runs.
+  const toReview = setTimeout(() => stepLine(msg, STEPS, 1), 1200);
   try {
-    const res = await api.agentParseUrl(url);
+    const res = await withTimeout(api.agentParseUrl(url), 90000, "fetch timed out");
+    clearTimeout(toReview);
     if (!res || !res.ok) {
-      msg.className = "text-sm text-rose-500";
-      msg.textContent = "Failed: " + (res?.error || "unknown error");
+      stepLine(msg, STEPS, 1, { error: true });
+      msg.innerHTML += ` <span class="text-rose-500">— ${esc(res?.error || "unknown error")}</span>`;
       return;
     }
+    stepLine(msg, STEPS, 2);
     onFill(res.fields || {});
     msg.className = "text-sm text-emerald-600";
     msg.textContent = "Filled ✓ — review and edit before saving.";
   } catch (e) {
-    msg.className = "text-sm text-rose-500";
-    msg.textContent = "Failed: " + e;
+    clearTimeout(toReview);
+    stepLine(msg, STEPS, 1, { error: true });
+    msg.innerHTML += ` <span class="text-rose-500">— ${esc(String(e.message || e))}</span>`;
   }
 }
 function fmtCount(n) {
@@ -4131,7 +4171,8 @@ export async function renderWelcome(view) {
       <div class="flex gap-2">
         <button id="wc-back" class="${btn}">← Back</button>
         <button id="wc-next" class="${btnP} flex-1">Continue →</button>
-      </div>`;
+      </div>
+      <button id="wc-skip" class="mt-1 w-full text-center text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">Skip for now — I'll add my key later in Settings</button>`;
   }
 
   function readyStep() {
@@ -4197,17 +4238,30 @@ export async function renderWelcome(view) {
       paintKeyField();
       const provSel = view.querySelector("#wc-prov");
       if (provSel) provSel.onchange = () => { S.provider = provSel.value; S.tested = null; setMsg("", ""); paintKeyField(); };
+      const skip = view.querySelector("#wc-skip");
+      if (skip) skip.onclick = () => { localStorage.setItem("or-onboarded", "1"); location.hash = "#/"; };
       const testBtn = view.querySelector("#wc-test");
       if (testBtn) testBtn.onclick = async () => {
         testBtn.disabled = true; setMsg("Testing…", "text-zinc-500");
+        // First run can be slow (the local AI engine warms up on first spawn),
+        // so nudge the copy after a few seconds and hard-cap the wait so the
+        // button can never appear frozen forever.
+        const slowHint = setTimeout(
+          () => setMsg("Still testing… first run warms up the engine (up to a minute).", "text-zinc-500"),
+          4000);
         try {
           await saveProvider();
-          const r = (await api.testLlm(S.provider, "")) || {};
+          const r = (await withTimeout(api.testLlm(S.provider, ""), 60000, "test timed out")) || {};
           S.tested = !!r.ok;
           setMsg(r.ok ? `✓ Connected · ${r.provider || S.provider}${r.model ? " · " + r.model : ""}` : `✗ ${r.error || "failed"}`,
             r.ok ? "text-emerald-500" : "text-rose-500");
-        } catch (err) { S.tested = false; setMsg(String(err.message || err), "text-rose-500"); }
-        testBtn.disabled = false;
+        } catch (err) {
+          S.tested = false;
+          const m = String(err && err.message || err);
+          setMsg(m.includes("timed out")
+            ? "✗ Test timed out — your key is saved; click Continue to proceed anyway."
+            : ("✗ " + m), "text-rose-500");
+        } finally { clearTimeout(slowHint); testBtn.disabled = false; }
       };
     }
 
@@ -4225,10 +4279,14 @@ export async function renderWelcome(view) {
     };
 
     if (S.step === 3) {
+      // The router (main.js gateCheck) forces the welcome wizard until
+      // `or-onboarded` is set, so BOTH exits must set it first or navigation
+      // silently bounces back here (the "skip does nothing" bug).
+      const finish = (hash) => { localStorage.setItem("or-onboarded", "1"); location.hash = hash; };
       const create = view.querySelector("#wc-create");
-      if (create) create.onclick = () => { toast("Let's build your first agent"); location.hash = "#/onboarding"; };
+      if (create) create.onclick = () => { toast("Let's build your first agent"); finish("#/agents"); };
       const explore = view.querySelector("#wc-explore");
-      if (explore) explore.onclick = () => { location.hash = "#/agents"; };
+      if (explore) explore.onclick = () => finish("#/");
     }
   }
 
