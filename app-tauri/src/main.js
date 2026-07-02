@@ -159,7 +159,9 @@ async function render() {
     if (useDyn) {
       portal.className = "tab-view w-full max-w-6xl flex-1 px-8 py-7";
       portal.innerHTML = skeletonFor(key);
+      setTabLoading(tabId, true);
       try { await DYN[key](portal); } catch (e) { console.error("[dyn]", key, e); portal.innerHTML = `<div class="m-8 rounded-xl border border-rose-500/40 bg-rose-500/5 p-4 text-rose-500">${String(e)}</div>`; }
+      finally { setTabLoading(tabId, false); }
       // A newer navigation for this tab took over while we awaited the (slow)
       // dynamic render — drop this stale result instead of marking it loaded.
       if (superseded()) return;
@@ -261,13 +263,24 @@ let keyboardWired = false;
 let linksWired = false;
 let refreshWired = false;
 
+// Track which tabs are currently loading data so the tab strip can show a spinner.
+const loadingTabs = new Map(); // tabId -> count (handles overlapping renders)
+let refreshTabStrip = null;
+function setTabLoading(tabId, loading) {
+  const count = loadingTabs.get(tabId) || 0;
+  const next = loading ? count + 1 : Math.max(0, count - 1);
+  if (next > 0) loadingTabs.set(tabId, next);
+  else loadingTabs.delete(tabId);
+  if (refreshTabStrip) refreshTabStrip();
+}
+
 function initTabs() {
   if (tabsInitialized) return;
   const strip = document.getElementById("tab-strip");
   if (!strip) return;
   tabsInitialized = true;
   strip.style.display = isOnboarding() ? "none" : "";
-  renderTabStrip(strip, contextMenu);
+  refreshTabStrip = renderTabStrip(strip, contextMenu, { isLoading: (id) => loadingTabs.has(id) });
 
   // When the active tab changes (focus, close, open, etc.), silently update the
   // URL and re-render the corresponding screen.
@@ -372,7 +385,7 @@ function wireLinkInterception() {
     e.preventDefault();
     const href = a.getAttribute("href");
     const foreground = e.shiftKey ? true : false;
-    tabStore.open({ hash: href, foreground });
+    tabStore.open({ hash: href, foreground, duplicate: true });
   });
 
   document.addEventListener("auxclick", (e) => {
@@ -380,7 +393,7 @@ function wireLinkInterception() {
     const a = e.target.closest('a[href^="#/"]');
     if (!a) return;
     e.preventDefault();
-    tabStore.open({ hash: a.getAttribute("href"), foreground: false });
+    tabStore.open({ hash: a.getAttribute("href"), foreground: false, duplicate: true });
   });
 
   document.addEventListener("contextmenu", (e) => {
@@ -390,7 +403,7 @@ function wireLinkInterception() {
     const hash = a.getAttribute("href");
     contextMenu.openContextMenu(e.clientX, e.clientY, [
       { label: "Open", icon: "arrow-right", onClick: () => { location.hash = hash; } },
-      { label: "Open in new tab", icon: "plus-square", onClick: () => tabStore.open({ hash, foreground: false }) },
+      { label: "Open in new tab", icon: "plus-square", onClick: () => tabStore.open({ hash, foreground: false, duplicate: true }) },
     ]);
   });
 }

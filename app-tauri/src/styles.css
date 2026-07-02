@@ -220,6 +220,11 @@ body[data-sidebar="rail"] #side #accountMenu i[data-lucide="chevron-up"] { displ
 .tab-close:hover { background: rgba(0,0,0,.08); }
 .dark .tab-close:hover { background: rgba(255,255,255,.12); }
 .tab-close svg { width: 12px; height: 12px; }
+.tab-loading {
+  display: inline-grid; place-items: center; flex-shrink: 0;
+  width: 14px; height: 14px;
+}
+.tab-loading svg { width: 14px; height: 14px; }
 .tab-new {
   display: grid; place-items: center; padding: 6px 8px;
   opacity: 0.5; cursor: pointer; border-radius: 6px;

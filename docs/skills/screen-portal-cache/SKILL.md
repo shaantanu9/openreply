@@ -95,20 +95,78 @@ function wireRefreshKeyboard() {
 }
 ```
 
+### 6. Tab loading indicator in the tab bar
+
+Track which tabs are currently loading and render a spinner in place of the tab icon:
+
+In `main.js`:
+
+```js
+const loadingTabs = new Map();
+let refreshTabStrip = null;
+function setTabLoading(tabId, loading) {
+  const count = loadingTabs.get(tabId) || 0;
+  const next = loading ? count + 1 : Math.max(0, count - 1);
+  if (next > 0) loadingTabs.set(tabId, next);
+  else loadingTabs.delete(tabId);
+  if (refreshTabStrip) refreshTabStrip();
+}
+```
+
+Toggle loading around the dynamic renderer:
+
+```js
+setTabLoading(tabId, true);
+try { await DYN[key](portal); }
+finally { setTabLoading(tabId, false); }
+```
+
+Pass the loader check into `renderTabStrip()` and capture its refresh function:
+
+```js
+refreshTabStrip = renderTabStrip(strip, contextMenu, {
+  isLoading: (id) => loadingTabs.has(id),
+});
+```
+
+In `lib/tabs.js`, replace the tab favicon with a spinning `loader-2` while `isLoading(tabId)` is true.
+
+### 7. New tabs must load fresh, not reuse an existing tab
+
+`tabStore.open()` deduplicates by hash by default. For "Open in new tab" actions (Cmd+click, middle-click, context menu), pass `duplicate: true` so the user gets a fresh portal with a loading skeleton:
+
+```js
+document.addEventListener("click", (e) => {
+  const a = e.target.closest('a[href^="#/"]');
+  if (!a) return;
+  const meta = e.metaKey || e.ctrlKey;
+  if (!meta) return;
+  e.preventDefault();
+  const href = a.getAttribute("href");
+  const foreground = e.shiftKey ? true : false;
+  tabStore.open({ hash: href, foreground, duplicate: true });
+});
+```
+
+Plain clicks still navigate the current tab and benefit from the cache.
+
 ## What this gives users
 
 - Returning to a recently viewed screen is instant (no re-render, no re-fetch).
-- First visits still load normally and benefit from the existing SWR cache in `or/api.js`.
+- Tabs show a loading spinner in the tab bar while their screen is fetching data, like Chrome.
+- Opening a screen in a new tab always shows the loading skeleton and fetches fresh data.
 - `F5` or `Cmd/Ctrl+R` reloads the current screen with fresh data, just like a browser.
 
 ## Files involved
 
-- `app-tauri/src/main.js` — router, portal management, refresh shortcut
+- `app-tauri/src/main.js` — router, portal management, refresh shortcut, link interception, loading state
 - `app-tauri/src/or/api.js` — SWR cache (`api.clearCache()`)
-- `app-tauri/src/lib/tabs.js` — `tabStore.reload(id)`
+- `app-tauri/src/lib/tabs.js` — `tabStore.open()` / `tabStore.reload(id)`, `renderTabStrip()`
+- `app-tauri/src/styles.css` — `.tab-loading` spinner styles
 
 ## Anti-patterns
 
 - Don't cache portals indefinitely — memory grows with every unique screen visited. Prune.
 - Don't skip `__orCleanup` when removing a portal — dynamic screens may have pollers/timers.
 - Don't reload while the user is typing unless you intentionally want browser-like data loss.
+- Don't make plain sidebar clicks open duplicates; deduplication is fine for in-tab navigation.

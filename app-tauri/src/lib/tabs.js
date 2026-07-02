@@ -239,7 +239,7 @@ function drawIcons() {
   }
 }
 
-export function renderTabStrip(host, contextMenu) {
+export function renderTabStrip(host, contextMenu, { isLoading = () => false } = {}) {
   if (!host) return;
   let dragId = null;
 
@@ -247,16 +247,19 @@ export function renderTabStrip(host, contextMenu) {
     const s = readStore();
     host.innerHTML = `
       <div class="tab-strip" role="tablist">
-        ${s.tabs.map((t) => `
-          <div class="tab-pill ${t.id === s.activeId ? 'active' : ''}"
+        ${s.tabs.map((t) => {
+          const loading = isLoading(t.id);
+          return `
+          <div class="tab-pill ${t.id === s.activeId ? 'active' : ''} ${loading ? 'loading' : ''}"
                role="tab" draggable="true" data-id="${t.id}" title="${t.title.replace(/"/g, '&quot;')}">
-            ${svgIcon(t.icon)}
+            ${loading ? '<span class="tab-loading"><i data-lucide="loader-2" class="h-3.5 w-3.5 animate-spin"></i></span>' : svgIcon(t.icon)}
             <span class="tab-title">${t.title}</span>
             <span class="tab-close" data-close="${t.id}" title="Close (⌘W)">
               <i data-lucide="x" class="h-3 w-3"></i>
             </span>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
         <div class="tab-new" title="New tab (⌘T)"><i data-lucide="plus" class="h-4 w-4"></i></div>
       </div>
     `;
@@ -319,5 +322,5 @@ export function renderTabStrip(host, contextMenu) {
     dragId = null;
   });
 
-  return unsub;
+  return paint;
 }

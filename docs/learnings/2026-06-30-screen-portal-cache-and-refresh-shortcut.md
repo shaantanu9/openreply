@@ -62,17 +62,59 @@ This matches the existing right-click **Reload** action on tabs, but is accessib
 
 ---
 
+### 3. Tab loading indicator in the tab bar, like Chrome
+
+Chrome shows a spinner in the tab itself while a page loads. We added the same behavior:
+
+- `main.js` tracks loading tabs with a reference-counted map:
+
+```js
+const loadingTabs = new Map();
+function setTabLoading(tabId, loading) {
+  const count = loadingTabs.get(tabId) || 0;
+  const next = loading ? count + 1 : Math.max(0, count - 1);
+  if (next > 0) loadingTabs.set(tabId, next);
+  else loadingTabs.delete(tabId);
+  if (refreshTabStrip) refreshTabStrip();
+}
+```
+
+- Around the dynamic renderer in `render()`, it toggles loading:
+
+```js
+setTabLoading(tabId, true);
+try { await DYN[key](portal); }
+finally { setTabLoading(tabId, false); }
+```
+
+- `lib/tabs.js` `renderTabStrip()` accepts `isLoading(id)` and renders a spinning `loader-2` icon in place of the tab favicon while loading.
+
+### 4. New tabs always load fresh, like Chrome
+
+`tabStore.open()` deduplicates by hash by default: if a tab with that hash already exists, it focuses the existing tab. This made "Open in new tab" (Cmd+click, middle-click, context menu) behave like "switch to existing tab" instead of opening a fresh page.
+
+Changed all new-tab open paths in `wireLinkInterception()` to pass `duplicate: true`:
+
+```js
+tabStore.open({ hash: href, foreground, duplicate: true });
+```
+
+Now a new tab always gets a fresh portal, shows the loading skeleton, and fetches its own data. Existing tab navigation and back/forward still benefit from the portal cache.
+
+---
+
 ## Result
 
 - Revisiting a recently-opened screen is now instant (the portal is already rendered and hidden).
-- First visits still fetch data, but the SWR cache still applies.
+- Tabs show a loading spinner in the tab bar while their screen is fetching data, like Chrome.
+- Opening a screen in a new tab always shows the loading skeleton and fetches fresh data.
 - Users can force a fresh fetch with `F5` or `Cmd/Ctrl+R`, just like a browser page reload.
 
 ---
 
 ## Files changed
 
-- `app-tauri/src/main.js` — portal model, `prunePortals`, refresh shortcut wiring
+- `app-tauri/src/main.js` — portal model, `prunePortals`, refresh shortcut wiring, new-tab link interception
 
 ## When to reuse
 

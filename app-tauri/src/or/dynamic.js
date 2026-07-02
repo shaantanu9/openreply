@@ -15,10 +15,10 @@ const chip = "rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py
 // contain inline HTML (e.g. a dimmed `<span>` parenthetical) — rendered as
 // markup, not escaped. Never pass un-escaped user data here; wrap it in esc().
 const head = (t, sub, actions = "") =>
-  `<div class="mb-6 flex items-start justify-between gap-4"><div>
+  `<div class="mb-6 flex flex-col lg:flex-row items-start justify-start lg:justify-between gap-4"><div>
      <h1 class="text-2xl font-bold text-zinc-900 dark:text-white">${t}</h1>
      <p class="text-zinc-500 dark:text-zinc-400">${sub}</p></div>
-     <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">${actions}</div></div>`;
+     <div class="flex shrink-0 flex-wrap items-center justify-start lg:justify-end gap-2">${actions}</div></div>`;
 const scoreCls = (s) => (s >= 0.7 ? "text-emerald-500" : s >= 0.45 ? "text-amber-500" : "text-reddit");
 
 // ── Agents dashboard ──────────────────────────────────────────────────────
@@ -233,8 +233,17 @@ export async function renderOverview(view) {
   view.innerHTML = `<div id="ov">${skeletonBody("agent")}</div>`;
   let a = null, k = null;
   try { a = await api.agentGet(); } catch (e) {}
-  if (!a) { document.getElementById("ov").innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
+  // A newer render for this tab (or a navigation away) wipes `portal.innerHTML`
+  // in main.js while we're awaiting the — now multi-second — sidecar calls.
+  // Scope every lookup to `view` and bail if our skeleton node is gone, so a
+  // superseded render never writes to a detached/replaced portal. (Was a
+  // global `document.getElementById("ov")` → `null.outerHTML` crash.)
+  let ovEl = view.querySelector("#ov");
+  if (!ovEl) return;
+  if (!a) { ovEl.innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
   try { k = await api.agentKnowledge(); } catch (e) {}
+  ovEl = view.querySelector("#ov");
+  if (!ovEl) return;
 
   const fresh = !(k && ((k.posts || 0) > 0 || k.last_refresh_at));
   const freshBanner = fresh
@@ -250,7 +259,7 @@ export async function renderOverview(view) {
         <div class="text-xs text-zinc-500 dark:text-zinc-400">${desc}</div></div></a>`;
   const btnIcon = "grid h-9 w-9 place-items-center rounded-full border border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 hover:text-reddit transition";
 
-  document.getElementById("ov").outerHTML =
+  ovEl.outerHTML =
     head(esc(a.name), `${esc(a.niche || "—")} · watching ${(a.platforms || []).join(", ") || "no sources yet"}`,
       // Secondary actions are compact icon-only buttons (tooltips via title +
       // aria-label) so the header stays clean; only the primary CTA keeps its label.
@@ -340,8 +349,13 @@ export async function renderOverview(view) {
       return;
     }
     fetchStore.start(null);
-    try { await api.agentRefreshStream(null, false); }
-    catch (err) { fetchStore.finish({ code: 1, hint: String(err) }); toast("Refresh failed: " + err); }
+    toast("DBG1: start() called");
+    let _dbgN = 0;
+    let _dbgUn = null;
+    try { _dbgUn = await api.onEvent("agent_refresh:progress", (p) => { _dbgN++; if (_dbgN === 1) toast("DBG2: first progress event arrived"); }); } catch (e) { toast("DBG2-ERR onEvent: " + e); }
+    try { await api.agentRefreshStream(null, false); toast("DBG3: stream call returned (events seen: " + _dbgN + ")"); }
+    catch (err) { fetchStore.finish({ code: 1, hint: String(err) }); toast("DBG-ERR stream: " + err); }
+    finally { try { _dbgUn && _dbgUn(); } catch (e) {} }
   };
 
   // Evolve the Goal Playbook from here (mirrors the Learning screen's button).
@@ -2349,10 +2363,17 @@ export async function renderKnowledge(view) {
   view.innerHTML = `<div id="kn">${skeletonBody("knowledge")}</div>`;
   let a = null, k = null;
   try { a = await api.agentGet(); } catch (e) {}
-  if (!a) { document.getElementById("kn").innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
+  // Scope to `view` + bail if superseded — same crash guard as renderOverview
+  // (a newer render wipes portal.innerHTML during the awaited sidecar calls,
+  // so a global getElementById("kn") would be null → .outerHTML crash).
+  let knEl = view.querySelector("#kn");
+  if (!knEl) return;
+  if (!a) { knEl.innerHTML = `<div class="${card}">No active agent. <a class="text-reddit underline" href="#/agents">Create one →</a></div>`; return; }
   try { k = await api.agentKnowledge(); } catch (e) {}
+  knEl = view.querySelector("#kn");
+  if (!knEl) return;
   const kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></div>`;
-  document.getElementById("kn").outerHTML =
+  knEl.outerHTML =
     head("Knowledge", `What <b>${esc(a.name)}</b> knows about its niche — refreshed on demand.`,
       `<button id="kn-refresh" class="${btn}">↻ Refresh now</button>`) +
     `<div class="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -3943,20 +3964,24 @@ export async function renderGeo(view) {
   async function load() {
     try {
       const r = await api.geoList();
+      // View may have been torn down / re-rendered during the await — bail so we
+      // never write to a detached portal (global getElementById → null crash).
+      const list = view.querySelector("#geo-list");
+      if (!list) return;
       const kpi = (l, v) => `<div class="${card}"><div class="text-sm text-zinc-500">${l}</div><div class="text-3xl font-extrabold text-zinc-900 dark:text-white">${v}</div></div>`;
       const qs = r?.queries || [];
-      document.getElementById("geo-kpi").innerHTML =
+      const kpiEl = view.querySelector("#geo-kpi");
+      if (kpiEl) kpiEl.innerHTML =
         kpi("Tracked queries", r?.total || 0) + kpi("Cited", r?.cited || 0) +
         kpi("Share of voice", (r?.share_of_voice || 0) + "%") + kpi("Citation rate", (r?.citation_rate || 0) + "%");
       // Citation-rate-over-time — aggregated across all queries' check history.
-      const trendEl = document.getElementById("geo-trend");
+      const trendEl = view.querySelector("#geo-trend");
       const tr = r?.trend;
       if (trendEl) {
         trendEl.innerHTML = (tr && tr.labels && tr.labels.length >= 2)
           ? `<div class="${card}"><div class="mb-2 text-sm font-semibold text-zinc-900 dark:text-white">Citation rate over time</div>${sparkChart({ labels: tr.labels, streams: { "Citation rate %": tr.rates } }, ["#10b981"])}</div>`
           : "";
       }
-      const list = document.getElementById("geo-list");
       list.innerHTML = qs.length ? qs.map((q) => {
         let comps = [], cites = [];
         try { comps = JSON.parse(q.competitors || "[]"); } catch (e) {}
@@ -4010,7 +4035,7 @@ export async function renderGeo(view) {
       list.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => { await api.geoDelete(b.getAttribute("data-del")); toast("Deleted"); load(); });
       list.querySelectorAll("[data-openurl]").forEach((a) => a.onclick = (e) => { e.preventDefault(); api.openUrl(a.getAttribute("data-openurl")); });
       icons();
-    } catch (e) { document.getElementById("geo-list").innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
+    } catch (e) { const gl = view.querySelector("#geo-list"); if (gl) gl.innerHTML = `<div class="${card} text-rose-500">${esc(e)}</div>`; }
   }
   load();
 }
@@ -4232,12 +4257,17 @@ export async function renderSubredditFull(view) {
 
   try {
     const a = await api.redditAccountStatus();
-    document.getElementById("sr-acct").innerHTML =
+    const acctEl = view.querySelector("#sr-acct");
+    if (acctEl) acctEl.innerHTML =
       `<div class="${card} flex items-center justify-between gap-4"><div><b class="text-zinc-900 dark:text-white">Account safety</b>
         <div class="text-sm text-zinc-500">${a && a.connected ? ("Reddit connected" + (a.username ? (" · u/" + esc(a.username)) : "")) : "Reddit not connected — connect on Connections for live rules & stats"}</div></div>
         <span class="rounded ${a && a.connected ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"} px-2 py-0.5 text-xs font-bold">${a && a.connected ? "connected" : "connect for live data"}</span></div>`;
   } catch (e) {}
 
+  // The status await above can outlive this render (view torn down / re-rendered
+  // during the multi-second call). Bail before wiring handlers so we never crash
+  // on a null #sr-disc / #sr-go / #sr-q.
+  if (!view.querySelector("#sr-disc")) return;
   document.getElementById("sr-disc").onclick = async (e) => {
     e.target.textContent = "Discovering…"; e.target.disabled = true;
     try { const r = await api.subDiscover(8); toast(r && r.error ? r.error : "Discovered subs"); } catch (err) { toast("Discover failed"); }
@@ -5085,11 +5115,11 @@ export async function renderWatch(view) {
 export async function renderXAccount(view) {
   view.className = "w-full max-w-6xl flex-1 px-8 py-7";
   view.innerHTML = head("X Account",
-    `Track creators & competitors on X. Pull their recent posts into your active agent's <a href="#/library" class="text-reddit underline">Library</a> corpus — to search, learn from, and repurpose — or browse any account's timeline and threads and reply right here. Posts only enter the Library when you click <b>Save to Library</b> (or <b>Fetch all</b>).`,
+    `Track X creators & competitors and pull their recent posts into your <a href="#/library" class="text-reddit underline">Library</a> corpus.`,
     `<button id="xa-add-btn" class="${btnP}">+ Add account</button>
-     <button id="xa-import-btn" class="ml-2 ${btn}">Import from browser</button>
-     <button id="xa-all-btn" class="ml-2 ${btn}"><i data-lucide="download" class="inline-block h-4 w-4 align-[-2px]"></i> Fetch all → Library + learn</button>
-     <a href="#/library" class="ml-2 ${btn}">See all in Library →</a>`) +
+     <button id="xa-import-btn" class="${btn}">Import from browser</button>
+     <button id="xa-all-btn" class="${btn}"><i data-lucide="download" class="inline-block h-4 w-4 align-[-2px]"></i> Fetch all → Library + learn</button>
+     <a href="#/library" class="${btn}">See all in Library →</a>`) +
     `<div id="xa-form" class="hidden mb-5 ${card}"></div>
      <div id="xa-import-msg" class="hidden mb-2 text-sm text-zinc-500"></div>
      <div id="xa-accounts" class="mb-5 space-y-3">${skelCardsN(2)}</div>
