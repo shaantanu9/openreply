@@ -1057,14 +1057,26 @@ def init_schema(db: Database) -> None:
     # (and blocks "another collect is already running" errors from firing
     # on a fresh process). 10 min is a safe floor — the longest legitimate
     # single-source fetch we've seen (aggressive appstore) tops out at ~8.
+    # READ-FIRST (2026-07-01): this UPDATE previously ran unconditionally on
+    # every process's first DB access. Under a concurrent long writer (an
+    # `agent learn` / graph-build pass holding the write lock) it blocked for
+    # the full 15s busy_timeout, so EVERY command — including read-only ones
+    # (`agent get` / `agent knowledge` → the Overview) — froze ~15-22s while
+    # learning ran. In WAL a SELECT never blocks on a writer, so probe first and
+    # only take the write lock when a zombie actually exists (the rare path).
     try:
-        db.conn.execute(
-            "UPDATE fetches SET ended_at=?, error=COALESCE(error,'stale: auto-swept on startup') "
-            "WHERE ended_at IS NULL "
-            "AND datetime(started_at) < datetime('now', '-10 minutes')",
-            (_utc_now(),),
-        )
-        db.conn.commit()
+        _zombie = db.conn.execute(
+            "SELECT 1 FROM fetches WHERE ended_at IS NULL "
+            "AND datetime(started_at) < datetime('now', '-10 minutes') LIMIT 1"
+        ).fetchone()
+        if _zombie:
+            db.conn.execute(
+                "UPDATE fetches SET ended_at=?, error=COALESCE(error,'stale: auto-swept on startup') "
+                "WHERE ended_at IS NULL "
+                "AND datetime(started_at) < datetime('now', '-10 minutes')",
+                (_utc_now(),),
+            )
+            db.conn.commit()
     except Exception:
         pass
 
@@ -1300,13 +1312,41 @@ def _ensure_extraction_queue(db: Database) -> None:
         db["extraction_queue"].create_index(["queued_at"])
         db["extraction_queue"].create_index(["topic"])
 
-    # One-time (per-install) backfill: queue every existing topic_post that
-    # has no graph evidence yet. Guarded on both tables existing AND on
-    # graph_nodes.evidence_post_id existing — that column is added later in
-    # the incremental-enrichment plan (Task 4). Until then, backfill is a
-    # no-op; INSERT OR IGNORE makes repeated runs cheap.
+    # ONE-TIME (per-install) backfill: queue every existing topic_post that has
+    # no graph evidence yet.
+    #
+    # PERF (2026-07-01): this LEFT JOIN of topic_posts × graph_nodes is
+    # O(posts × nodes/topic) and grew to ~22s on a mature corpus. Because
+    # init_schema runs in EVERY process's first DB access — including read-only
+    # UI reads (`agent get` / `agent knowledge` → the Overview) — it froze the
+    # whole app for 15-22s once the DB got large, even though INSERT OR IGNORE
+    # made the *insert* cheap (the expensive SELECT scan ran regardless). New
+    # posts are enqueued incrementally by collect/ingest (research/collect.py),
+    # so this startup scan only needs to run ONCE per install — a migration for
+    # posts that predate incremental enrichment. Gate it on `PRAGMA
+    # user_version` (unused elsewhere): after a clean run we stamp the version
+    # so every later boot skips the scan entirely (a single-integer read, no
+    # lock, instant).
+    _BACKFILL_DONE_VERSION = 1
+    try:
+        _uv = (db.conn.execute("PRAGMA user_version").fetchone() or [0])[0]
+    except Exception:
+        _uv = 0
+    if _uv >= _BACKFILL_DONE_VERSION:
+        return
+
     try:
         if "topic_posts" in db.table_names() and "graph_nodes" in db.table_names():
+            # Composite index so the JOIN seeks graph_nodes by the selective
+            # evidence_post_id instead of scanning every node in a topic
+            # (SQLite otherwise picks a topic-only index → the O(posts ×
+            # nodes/topic) blowup above).
+            try:
+                db["graph_nodes"].create_index(
+                    ["evidence_post_id", "topic"], if_not_exists=True
+                )
+            except Exception:
+                pass
             gn_cols = {c.name for c in db["graph_nodes"].columns}
             if "evidence_post_id" in gn_cols:
                 db.conn.execute(
@@ -1333,8 +1373,13 @@ def _ensure_extraction_queue(db: Database) -> None:
                     """
                 )
             db.conn.commit()
+        # Stamp done ONLY after a clean run so a failure (e.g. lock) retries on
+        # the next launch instead of silently skipping the migration forever.
+        db.conn.execute(f"PRAGMA user_version = {_BACKFILL_DONE_VERSION}")
+        db.conn.commit()
     except Exception:
-        # Backfill is best-effort. A failure here must NOT break app boot.
+        # Backfill is best-effort. A failure here must NOT break app boot
+        # (and must not stamp user_version — it retries next launch).
         pass
 
 
